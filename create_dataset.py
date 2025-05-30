@@ -8,11 +8,7 @@
 import random
 import json
 
-ANIMAL = ["dog", "cat", "bird", "fish", "horse"]
-FRUIT = ["apple", "banana", "cherry", "orange", "pear"]
-COLOR = ["red", "blue", "green", "yellow", "purple"]
-NUMBER = ["one", "two", "three", "four", "five"]
-SHAPE = ["circle", "square", "triangle", "rectangle", "pentagon"]
+from categories import *
 
 def generate_list(length:int):
     """
@@ -49,4 +45,4 @@ def generate_dataset(num_examples:int):
     return dataset
 
 if __name__ == "__main__":
-    generate_dataset(1000)
+    generate_dataset(300)

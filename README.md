@@ -30,64 +30,85 @@ Answer: (3)
 
 ---
 
-## Benchmarking Results (gpt-3.5-turbo)
+## Benchmarking Results
+
+This section presents the benchmarking results for different models on the counting task.
+
+### GPT-3.5-Turbo
 
 The following results were obtained by running the `benchmark.py` script with the `gpt-3.5-turbo` model.
 
-### Detailed Category Performance
+#### Detailed Category Performance (gpt-3.5-turbo)
 
-**Category: animal**
-*   Total: 1000
-*   Correct: 411 (Accuracy: 0.41)
-*   Formatting Errors: 0
-*   Off-by-One Errors: 359
-*   Large Errors (>1): 230
-*   Avg. Abs. Error Magnitude (for numerical errors): 1.53
-*   Error Bias (model - true): -1.33
+Category: animal
+  Total: 300
+  Correct: 198 (Accuracy: 0.66)
+  Formatting Errors: 0
+  Off-by-One Errors: 85
+  Large Errors (>1): 17
+  Avg. Abs. Error Magnitude (for numerical errors): 1.18
+  Error Bias (model - true): -1.18
 
-**Category: color**
-*   Total: 1000
-*   Correct: 397 (Accuracy: 0.40)
-*   Formatting Errors: 0
-*   Off-by-One Errors: 359
-*   Large Errors (>1): 244
-*   Avg. Abs. Error Magnitude (for numerical errors): 1.58
-*   Error Bias (model - true): -1.33
+Category: color
+  Total: 300
+  Correct: 153 (Accuracy: 0.51)
+  Formatting Errors: 0
+  Off-by-One Errors: 131
+  Large Errors (>1): 16
+  Avg. Abs. Error Magnitude (for numerical errors): 1.12
+  Error Bias (model - true): 0.14
 
-**Category: fruit**
-*   Total: 1000
-*   Correct: 380 (Accuracy: 0.38)
-*   Formatting Errors: 0
-*   Off-by-One Errors: 342
-*   Large Errors (>1): 278
-*   Avg. Abs. Error Magnitude (for numerical errors): 1.64
-*   Error Bias (model - true): -1.60
+Category: fruit
+  Total: 300
+  Correct: 212 (Accuracy: 0.71)
+  Formatting Errors: 0
+  Off-by-One Errors: 82
+  Large Errors (>1): 6
+  Avg. Abs. Error Magnitude (for numerical errors): 1.08
+  Error Bias (model - true): -1.08
 
-**Category: number**
-*   Total: 1000
-*   Correct: 431 (Accuracy: 0.43)
-*   Formatting Errors: 0
-*   Off-by-One Errors: 406
-*   Large Errors (>1): 163
-*   Avg. Abs. Error Magnitude (for numerical errors): 1.41
-*   Error Bias (model - true): -0.69
+Category: number
+  Total: 300
+  Correct: 206 (Accuracy: 0.69)
+  Formatting Errors: 0
+  Off-by-One Errors: 84
+  Large Errors (>1): 10
+  Avg. Abs. Error Magnitude (for numerical errors): 1.11
+  Error Bias (model - true): -0.79
 
-**Category: shape**
-*   Total: 1000
-*   Correct: 357 (Accuracy: 0.36)
-*   Formatting Errors: 0
-*   Off-by-One Errors: 287
-*   Large Errors (>1): 356
-*   Avg. Abs. Error Magnitude (for numerical errors): 1.99
-*   Error Bias (model - true): -1.99
+Category: shape
+  Total: 300
+  Correct: 191 (Accuracy: 0.64)
+  Formatting Errors: 0
+  Off-by-One Errors: 99
+  Large Errors (>1): 10
+  Avg. Abs. Error Magnitude (for numerical errors): 1.09
+  Error Bias (model - true): -1.06
 
-### Overall Summary
+#### Overall Summary (gpt-3.5-turbo)
 
-*   Total Examples: 5000
-*   Overall Correct: 1976 (39.52%)
-*   Overall Formatting Errors: 0 (0.00%)
-*   Overall Off-by-One Errors: 1753 (35.06%)
-*   Overall Large Errors: 1271 (25.42%)
+Total Examples: 1500
+  Overall Correct: 960 (64.00%)
+  Overall Formatting Errors: 0 (0.00%)
+  Overall Off-by-One Errors: 481 (32.07%)
+  Overall Large Errors: 59 (3.93%)
+
+---
+
+### GPT-4o
+
+*(This section will be populated with results from GPT-4o. For now, visual summaries are provided below.)*
+
+#### Visual Summaries (gpt-4o)
+
+**Category Accuracy (Detailed)**
+![GPT-4o Zero-Shot Category Accuracy Detailed](gpt-4o_zero_shot_category_accuracy_detailed.png)
+
+**Error Magnitudes**
+![GPT-4o Zero-Shot Error Magnitudes](gpt-4o_zero_shot_error_magnitudes.png)
+
+**Outcome Types by Category**
+![GPT-4o Zero-Shot Outcome Types by Category](gpt-4o_zero_shot_outcome_types_by_category.png)
 
 ---
 

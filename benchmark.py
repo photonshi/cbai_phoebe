@@ -45,11 +45,6 @@ def benchmark_model(model:str, dataset:list):
     
     categories = sorted(list(set(example["type"] for example in dataset)))
     
-    # Detailed statistics per category
-    # category_stats[category_name] = {
-    #     "correct": 0, "formatting_error": 0, "off_by_one_error": 0, 
-    #     "large_error": 0, "total": 0, "error_magnitudes": []
-    # }
     category_stats = defaultdict(lambda: {
         "correct": 0, "formatting_error": 0, 
         "off_by_one_error": 0, "large_error": 0, 
@@ -132,7 +127,7 @@ def benchmark_model(model:str, dataset:list):
         "categories_list": categories
     }
 
-def visualize_results(benchmark_results:dict):
+def visualize_results(benchmark_results:dict, model_name:str):
     """
     Visualize the detailed benchmark results, focusing on error types per category.
     """
@@ -165,7 +160,7 @@ def visualize_results(benchmark_results:dict):
     plt.xticks(rotation=45, ha="right")
     plt.legend()
     plt.tight_layout()
-    plt.savefig("zero_shot_outcome_types_by_category.png")
+    plt.savefig(f"{model_name}_zero_shot_outcome_types_by_category.png")
     print("Saved outcome types plot to zero_shot_outcome_types_by_category.png")
     plt.show()
 
@@ -181,7 +176,7 @@ def visualize_results(benchmark_results:dict):
     for i, acc in enumerate(accuracies):
         plt.text(i, acc + 0.02, f"{acc:.2f}", ha='center')
     plt.tight_layout()
-    plt.savefig("zero_shot_category_accuracy_detailed.png")
+    plt.savefig(f"{model_name}_zero_shot_category_accuracy_detailed.png")
     print("Saved category accuracy plot to zero_shot_category_accuracy_detailed.png")
     plt.show()
     
@@ -211,7 +206,7 @@ def visualize_results(benchmark_results:dict):
         plt.title("Distribution of Numerical Error Magnitudes by Category")
         plt.xticks(rotation=45, ha="right")
         plt.tight_layout()
-        plt.savefig("zero_shot_error_magnitudes.png")
+        plt.savefig(f"{model_name}_zero_shot_error_magnitudes.png")
         print("Saved error magnitudes plot to zero_shot_error_magnitudes.png")
         plt.show()
     else:
@@ -220,9 +215,9 @@ def visualize_results(benchmark_results:dict):
 
 if __name__ == "__main__":
     dataset = read_dataset("dataset.json")
-    results = benchmark_model("gpt-3.5-turbo", dataset)
+    results = benchmark_model("gpt-4o", dataset)
     if results and results["categories_list"]: # Ensure there are categories
-        visualize_results(results)
+        visualize_results(results, "gpt-4o")
     elif not results["categories_list"]:
         print("No categories found in the dataset. Skipping visualization.")
     else:
