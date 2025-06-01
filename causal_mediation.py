@@ -1,339 +1,438 @@
-# for a single model, create a causal mediation analysis experiment 
-# (patching from one run to another) to answer: 
-# "is there a hidden state layer that contains a representation of the running count of matching words, 
-# while processing the list of words?"
-
 import nnsight
 from nnsight import CONFIG
 from nnsight import LanguageModel, util
 from nnsight.tracing.graph import Proxy
 
-from typing import Tuple
+from typing import Tuple, List
 import plotly.express as px
 import plotly.io as pio
 
 import numpy as np
+import torch
+import gc
+import json
+import random
 
-from benchmark import generate_question
-
-from categories import *
-
-# 7c00f2a8-9c9c-4651-bcf0-df3b6f4b88b8
-CONFIG.API.APIKEY = input("enter api key")
+# Set API key
+CONFIG.API.APIKEY = input("enter api key: ")
 print("API key set")
 
-def create_counting_examples():
+
+def clear_memory():
+    """Clear GPU memory"""
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    gc.collect()
+
+
+def load_counting_dataset(filename="dataset.json"):
+    """Load counting examples from JSON file"""
+    try:
+        with open(filename, "r") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        print(f"Warning: {filename} not found. Using generated examples.")
+        return None
+
+
+def create_better_counting_examples():
     """
-    Create clean/corrupted pairs for counting task - Updated to encourage numerical output
+    Create IOI-style clean/corrupted pairs where only ONE WORD differs
+    Following the IOI pattern of swapping one key word that changes the answer
     """
-    print("\n--- Running create_counting_examples ---")
-    # Clean examples with animals to count - emphasize numerical output
-    clean_examples = [
-        "Count the animals and give the answer as a number: dog apple cherry bus cat grape bowl. Answer:",
-        "Count the animals and give the answer as a number: bird table lion phone duck water glass. Answer:", 
-        "Count the animals and give the answer as a number: mouse book tiger pen fish soup knife. Answer:",
-        "Count the animals in this list and give the answer as a number: cat dog bird lion mouse fish tiger. Answer:",
-        "How many animals are in this list? Give the answer as a number: elephant car tree rabbit book horse desk. Answer:"
-    ]
-    
-    # Corrupted examples - replace animals with non-animals
-    corrupted_examples = [
-        "Count the animals and give the answer as a number: book apple cherry bus phone grape bowl. Answer:",
-        "Count the animals and give the answer as a number: phone table car phone desk water glass. Answer:",
-        "Count the animals and give the answer as a number: book book car pen soup soup knife. Answer:", 
-        "Count the animals in this list and give the answer as a number: car phone book car book soup desk. Answer:",
-        "How many animals are in this list? Give the answer as a number: phone car tree book book desk desk. Answer:"
-    ]
-    
-    # Expected counts for clean examples
-    clean_counts = [2, 3, 3, 7, 3]  # [dog, cat], [bird, lion, duck], [mouse, tiger, fish], etc.
-    
-    # Expected counts for corrupted examples (should be 0 or very low)
-    corrupted_counts = [0, 0, 0, 0, 0]
-    
-    print(f"Generated {len(clean_examples)} clean examples and {len(corrupted_examples)} corrupted examples.")
+    print("\n--- Creating IOI-style counting examples ---")
+
+    # Hardcode examples like IOI does
+    clean_examples = []
+    corrupted_examples = []
+    clean_counts = []
+    corrupted_counts = []
+
+    # Example 1: Clean has 2 animals, corrupted has 3 animals (swap table->dog)
+    clean_prompt = "Count the animals: fish table cat. Answer:"
+    corrupted_prompt = "Count the animals: fish dog cat. Answer:"
+    clean_examples.append(clean_prompt)
+    corrupted_examples.append(corrupted_prompt)
+    clean_counts.append(2)  # fish, cat
+    corrupted_counts.append(3)  # fish, dog, cat
+
+    # Example 2: Clean has 1 animal, corrupted has 2 animals (swap book->bird)
+    clean_prompt = "Count the animals: dog book pen. Answer:"
+    corrupted_prompt = "Count the animals: dog bird pen. Answer:"
+    clean_examples.append(clean_prompt)
+    corrupted_examples.append(corrupted_prompt)
+    clean_counts.append(1)  # dog
+    corrupted_counts.append(2)  # dog, bird
+
+    # Example 3: Clean has 0 animals, corrupted has 1 animal (swap table->cat)
+    clean_prompt = "Count the animals: book table pen. Answer:"
+    corrupted_prompt = "Count the animals: book cat pen. Answer:"
+    clean_examples.append(clean_prompt)
+    corrupted_examples.append(corrupted_prompt)
+    clean_counts.append(0)  # no animals
+    corrupted_counts.append(1)  # cat
+
+    for i, (clean, corrupted, clean_count, corrupted_count) in enumerate(
+        zip(clean_examples, corrupted_examples, clean_counts, corrupted_counts)
+    ):
+        print(f"Example {i}:")
+        print(f"  Clean ({clean_count}): {clean}")
+        print(f"  Corrupted ({corrupted_count}): {corrupted}")
+        print()
+
     return clean_examples, corrupted_examples, clean_counts, corrupted_counts
+
 
 def get_number_tokens(tokenizer, max_count=10):
     """
-    Get token IDs for numbers 0-max_count - Fixed for GPT-2 tokenizer
+    Get token IDs for numbers 0-max_count
     """
-    print("\n--- Running get_number_tokens ---")
+    print("\n--- Getting number tokens ---")
     number_tokens = {}
-    
+
     for i in range(max_count + 1):
-        # Focus on numerical representations: " 2", "2" (prioritize digits over words)
-        candidates = [f" {i}", str(i)]
-        
-        for candidate in candidates:
-            try:
-                # Handle GPT-2 tokenizer Encoding objects
-                token_result = tokenizer(candidate)
-                
-                # Extract token IDs from Encoding object
-                if hasattr(token_result, 'ids'):
-                    token_ids = token_result.ids
-                elif isinstance(token_result, dict) and "input_ids" in token_result:
-                    token_ids = token_result["input_ids"]
-                elif hasattr(token_result, 'input_ids'):
-                    token_ids = token_result.input_ids
-                else:
-                    token_ids = token_result
-                
-                # Skip BOS token if present, handle single token case
-                if len(token_ids) >= 2:
-                    number_tokens[i] = token_ids[1]
-                    break
-                elif len(token_ids) == 1:
-                    number_tokens[i] = token_ids[0]
-                    break
-            except Exception as e:
-                print(f"Error tokenizing '{candidate}': {e}")
-                continue
-                
-        if i not in number_tokens:
-            # Fallback - just use string representation
-            try:
-                token_result = tokenizer(str(i))
-                if hasattr(token_result, 'ids'):
-                    token_ids = token_result.ids
-                else:
-                    token_ids = [0]  # Emergency fallback
-                number_tokens[i] = token_ids[0] if len(token_ids) > 0 else 0
-            except:
-                number_tokens[i] = 0  # Emergency fallback
-    
-    print(f"Number to token mapping: {number_tokens}")
+        # Try space + number first (common in GPT-2)
+        text = f" {i}"
+        tokens = tokenizer(text, add_special_tokens=False)["input_ids"]
+        if len(tokens) == 1:
+            number_tokens[i] = tokens[0]
+        else:
+            # Try just the number
+            text = str(i)
+            tokens = tokenizer(text, add_special_tokens=False)["input_ids"]
+            number_tokens[i] = tokens[0]
+
+    # Verify tokens
+    for num, tok in number_tokens.items():
+        decoded = tokenizer.decode([tok])
+        print(f"{num} -> token {tok} -> '{decoded}'")
+
     return number_tokens
 
-def counting_activation_patching(llm, example_idx=0):
+
+def counting_activation_patching_fixed(model, example_idx=0):
     """
-    Apply activation patching to understand counting representations - Fixed for GPT-2
+    Fixed activation patching implementation following IOI pattern exactly
     """
-    print(f"\n--- Running counting_activation_patching for example_idx: {example_idx} ---")
-    clean_examples, corrupted_examples, clean_counts, corrupted_counts = create_counting_examples()
-    number_tokens = get_number_tokens(llm.tokenizer)
-    
+    print(
+        f"\n--- Running FIXED counting_activation_patching for example {example_idx} ---"
+    )
+    clear_memory()
+
+    # Get examples
+    clean_examples, corrupted_examples, clean_counts, corrupted_counts = (
+        create_better_counting_examples()
+    )
+
+    if example_idx >= len(clean_examples):
+        example_idx = 0
+
+    number_tokens = get_number_tokens(model.tokenizer)
+
     clean_prompt = clean_examples[example_idx]
     corrupted_prompt = corrupted_examples[example_idx]
-    correct_count = clean_counts[example_idx]
-    
+    clean_count = clean_counts[example_idx]
+    corrupted_count = corrupted_counts[example_idx]
+
     print(f"Clean prompt: {clean_prompt}")
     print(f"Corrupted prompt: {corrupted_prompt}")
-    print(f"Expected count: {correct_count}")
-    
-    # Get token IDs for the correct count and a wrong count
-    correct_token = number_tokens[correct_count]
-    wrong_token = number_tokens[0]  # "0" as wrong answer
-    
-    print(f"Correct token ID ({correct_count}): {correct_token}")
-    print(f"Wrong token ID (0): {wrong_token}")
-    
-    # GPT-2 specific architecture - Fixed model path
-    N_LAYERS = len(llm.transformer.h)  # GPT-2 uses transformer.h, not model.transformer.h
-    print(f"Model has {N_LAYERS} layers")
-    
+    print(f"Clean expected count: {clean_count}")
+    print(f"Corrupted expected count: {corrupted_count}")
+
+    # Set up tokens - like IOI, we compare correct vs incorrect for each prompt
+    clean_correct_index = number_tokens[clean_count]
+    clean_incorrect_index = number_tokens[
+        corrupted_count
+    ]  # The corrupted count is "incorrect" for clean
+
+    print(f"Clean correct token ({clean_count}): {clean_correct_index}")
+    print(f"Clean incorrect token ({corrupted_count}): {clean_incorrect_index}")
+
+    N_LAYERS = len(model.transformer.h)
+
+    # Get sequence length from clean prompt
+    clean_tokens = model.tokenizer(clean_prompt, return_tensors="pt")["input_ids"][0]
+    seq_len = len(clean_tokens)
+
+    print(f"Sequence length: {seq_len}")
+
+    # Store results
     patching_results = []
-    
-    with llm.trace(remote=True) as tracer:
-        # Clean run - save activations
-        print("\nStarting clean run...")
+
+    # Run all forward passes in one tracing context
+    with model.trace() as tracer:
+
+        # 1. Clean run - save all layer outputs
         with tracer.invoke(clean_prompt) as invoker:
-            # Handle tokenizer input properly
-            # The invoker.inputs structure for a LanguageModel.invoke('string_prompt') is:
-            # (( {'input_ids': tensor([[...]]), 'attention_mask': tensor([[...]])} ), {})
-            # So invoker.inputs[0] is the tuple containing the tokenized dict.
-            # invoker.inputs[0][0] is the tokenized dict itself.
-            # invoker.inputs[0][0]['input_ids'] is the batched input_ids tensor.
-            # We take the first batch element [0].
-            tokenized_dict = invoker.inputs[0][0]
-            clean_tokens = tokenized_dict['input_ids'][0]
-            
-            # Save residual stream activations after each layer (GPT-2 specific)
-            clean_residual = {}
+            clean_layer_outputs = {}
             for layer_idx in range(N_LAYERS):
-                # For GPT-2: get the residual stream after each transformer block
-                layer_block = llm.transformer.h[layer_idx]
-                # The residual stream flows through each block. Access the hidden_states (usually the first element).
-                clean_residual[layer_idx] = layer_block.output[0]
-            
-            # Get clean logits
-            clean_logits = llm.lm_head.output
+                clean_layer_outputs[layer_idx] = model.transformer.h[layer_idx].output[
+                    0
+                ]
+
+            clean_logits = model.lm_head.output
             clean_logit_diff = (
-                clean_logits[0, -1, correct_token] - clean_logits[0, -1, wrong_token]
+                clean_logits[0, -1, clean_correct_index]
+                - clean_logits[0, -1, clean_incorrect_index]
             ).save()
-        
-        # Corrupted run - get baseline performance
-        print("\nStarting corrupted run...")
+
+        # 2. Corrupted run - baseline
         with tracer.invoke(corrupted_prompt) as invoker:
-            corrupted_logits = llm.lm_head.output
+            corrupted_logits = model.lm_head.output
             corrupted_logit_diff = (
-                corrupted_logits[0, -1, correct_token] - corrupted_logits[0, -1, wrong_token]
+                corrupted_logits[0, -1, clean_correct_index]
+                - corrupted_logits[0, -1, clean_incorrect_index]
             ).save()
-        
-        # Patching experiments - test each layer's contribution
-        print("\nStarting patching experiments...")
+
+        # 3. Patched runs - for each layer and position
         for layer_idx in range(N_LAYERS):
             layer_results = []
-            print(f"  Patching Layer {layer_idx}/{N_LAYERS - 1}...")
-            
-            # Patch at each token position to see when counting representations develop
-            token_count = len(clean_tokens) if hasattr(clean_tokens, '__len__') else 10  # fallback
-            
-            for token_idx in range(token_count):
+
+            for pos_idx in range(seq_len):
+                # Patched run: corrupted prompt but with clean activations at layer_idx, position pos_idx
                 with tracer.invoke(corrupted_prompt) as invoker:
-                    layer_block = llm.transformer.h[layer_idx]
-                    # Patch the hidden_states (first element of output) at this layer and position
-                    layer_block.output[0][:, token_idx, :] = clean_residual[layer_idx][:, token_idx, :]
-                    
-                    patched_logits = llm.lm_head.output
-                    patched_logit_diff = (
-                        patched_logits[0, -1, correct_token] - patched_logits[0, -1, wrong_token]
+                    # Replace the activation at this layer and position with clean version
+                    model.transformer.h[layer_idx].output[0][:, pos_idx, :] = (
+                        clean_layer_outputs[layer_idx][:, pos_idx, :]
                     )
-                    
-                    # Normalized patching score
-                    patched_result = (patched_logit_diff - corrupted_logit_diff) / (
+
+                    patched_logits = model.lm_head.output
+                    patched_logit_diff = (
+                        patched_logits[0, -1, clean_correct_index]
+                        - patched_logits[0, -1, clean_incorrect_index]
+                    )
+
+                    # Calculate restoration: how much did patching help?
+                    # This measures: (patched - corrupted) / (clean - corrupted)
+                    restoration = (patched_logit_diff - corrupted_logit_diff) / (
                         clean_logit_diff - corrupted_logit_diff
                     )
-                    
-                    layer_results.append(patched_result.save())
-            
+
+                    layer_results.append(restoration.save())
+
             patching_results.append(layer_results)
-    
-    # Access .value only after the trace is complete
-    print(f"Clean logit diff: {clean_logit_diff.value if hasattr(clean_logit_diff, 'value') else 'pending computation'}")
-    print(f"Corrupted logit diff: {corrupted_logit_diff.value if hasattr(corrupted_logit_diff, 'value') else 'pending computation'}")
+            print(f"Completed layer {layer_idx}")
 
-    return patching_results, clean_tokens, clean_logit_diff, corrupted_logit_diff
+    # Get token labels
+    tokens = model.tokenizer(clean_prompt, return_tensors="pt")["input_ids"][0]
+    token_labels = [
+        f"{model.tokenizer.decode(token)}_{i}" for i, token in enumerate(tokens)
+    ]
 
-def analyze_counting_layers(llm, tokenizer, num_examples=2):
-    """
-    Run patching on multiple examples and identify which layers are most important for counting
-    """
-    print("\n--- Running analyze_counting_layers ---")
-    all_results = []
-    token_labels = []
-    
-    for example_idx in range(num_examples):
-        print(f"\n=== Analyzing Example {example_idx + 1}/{num_examples} ===")
-        results, tokens, clean_diff, corrupt_diff = counting_activation_patching(llm, example_idx)
-        
-        # Convert tokens to readable labels
-        if example_idx == 0:  # Only need to do this once
-            if hasattr(tokens, '__iter__'):
-                token_labels = []
-                for token in tokens:
-                    # Handle tensor tokens
-                    if hasattr(token, 'item'):
-                        token_val = token.item()
-                    else:
-                        token_val = token
-                    # Decode single token
-                    decoded = tokenizer.decode([token_val])
-                    token_labels.append(decoded)
-            else:
-                token_labels = [f"token_{i}" for i in range(10)]  # fallback
-        
-        all_results.append(results)
-    
-    # Average results across examples
-    # Convert Proxy objects to values
-    processed_results = []
-    for example in all_results:
-        example_values = []
-        for layer in example:
-            layer_values = []
-            for result in layer:
-                if hasattr(result, 'value'):
-                    layer_values.append(result.value)
-                elif hasattr(result, 'item'):
-                    layer_values.append(result.item())
-                else:
-                    layer_values.append(float(result) if result is not None else 0.0)
-            example_values.append(layer_values)
-        processed_results.append(example_values)
-    
-    averaged_results = np.mean(processed_results, axis=0)
-    
-    return averaged_results, token_labels
+    return (
+        patching_results,
+        token_labels,
+        float(clean_logit_diff),
+        float(corrupted_logit_diff),
+    )
 
-def plot_counting_analysis(results, token_labels, title="Counting Representation Development"):
+
+def plot_ioi_patching_results(
+    model,
+    ioi_patching_results,
+    x_labels,
+    plot_title="Normalized Logit Difference After Patching Residual Stream on the Counting Task",
+):
     """
-    Visualize where counting representations develop in the model
+    Plot patching results with proper conversion
     """
+    # Convert saved tensors to values
+    results_array = []
+    for layer_results in ioi_patching_results:
+        layer_values = [float(result.value) for result in layer_results]
+        results_array.append(layer_values)
+
+    results_array = np.array(results_array)
+
+    # Check dimensions
+    print(f"Results shape: {results_array.shape}")
+    print(f"Labels length: {len(x_labels)}")
+
+    # Ensure the number of columns matches the number of labels
+    if results_array.shape[1] != len(x_labels):
+        # Trim results to match labels or vice versa
+        min_length = min(results_array.shape[1], len(x_labels))
+        results_array = results_array[:, :min_length]
+        x_labels = x_labels[:min_length]
+        print(f"Adjusted to {min_length} tokens")
+
     fig = px.imshow(
-        results,
+        results_array,
         color_continuous_midpoint=0.0,
         color_continuous_scale="RdBu",
-        labels={"x": "Token Position", "y": "Layer", "color": "Patching Effect"},
-        x=token_labels,
-        title=title,
-        aspect="auto"
+        labels={"x": "Position", "y": "Layer", "color": "Norm. Logit Diff"},
+        x=x_labels,
+        y=[f"Layer {i}" for i in range(results_array.shape[0])],
+        title=plot_title,
     )
-    
-    # Add vertical lines to separate different parts of the prompt
-    fig.update_layout(
-        xaxis=dict(tickangle=45),
-        height=600,
-        width=1000
-    )
-    
+
+    # Save plot
+    try:
+        fig.write_image("counting_results.png")
+    except:
+        print("Could not save image (kaleido not installed)")
+
     return fig
 
-def identify_counting_circuits(results, token_labels, threshold=0.3):
-    """
-    Identify which (layer, position) pairs are most important for counting
-    """
-    important_positions = []
-    
-    for layer_idx, layer_results in enumerate(results):
-        for token_idx, effect in enumerate(layer_results):
-            if abs(effect) > threshold:
-                token_label = token_labels[token_idx] if token_idx < len(token_labels) else f"token_{token_idx}"
-                important_positions.append({
-                    'layer': layer_idx,
-                    'position': token_idx,
-                    'token': token_label,
-                    'effect': effect,
-                    'description': f"Layer {layer_idx} processes '{token_label}' (effect: {effect:.3f})"
-                })
-    
-    # Sort by effect magnitude
-    important_positions.sort(key=lambda x: abs(x['effect']), reverse=True)
-    
-    print("\nMost Important Counting Circuit Components:")
-    print("=" * 50)
-    for pos in important_positions[:10]:  # Top 10
-        print(pos['description'])
-    
-    return important_positions
 
-def run_counting_analysis(model_name="openai-community/gpt2"):
+def analyze_layer_importance_fixed(patching_results, token_labels):
+    """
+    Analyze results with proper conversion
+    """
+    # Convert saved tensors to values
+    results_array = []
+    for layer_results in patching_results:
+        layer_values = [float(result.value) for result in layer_results]
+        results_array.append(layer_values)
+
+    results_array = np.array(results_array)
+
+    print(f"Results shape: {results_array.shape}")
+    print(f"Results range: [{results_array.min():.4f}, {results_array.max():.4f}]")
+
+    # Find max importance per layer
+    max_per_layer = np.max(np.abs(results_array), axis=1)
+
+    print("\n--- Layer Importance Analysis ---")
+    print("Max absolute restoration per layer:")
+    for i, val in enumerate(max_per_layer):
+        print(f"  Layer {i}: {val:.4f}")
+
+    print("\nTop 5 most important layers:")
+    top_layers = np.argsort(max_per_layer)[-5:][::-1]
+    for layer_idx in top_layers:
+        pos_idx = np.argmax(np.abs(results_array[layer_idx]))
+        print(
+            f"  Layer {layer_idx}: {max_per_layer[layer_idx]:.4f} (at position {pos_idx}: {token_labels[pos_idx]})"
+        )
+
+    # Find average importance per position
+    avg_per_position = np.mean(np.abs(results_array), axis=0)
+
+    print("\nAverage importance per token position:")
+    # Show first 10 tokens
+    for i in range(min(10, len(token_labels))):
+        print(f"  {token_labels[i]}: {avg_per_position[i]:.4f}")
+    if len(token_labels) > 10:
+        print(f"  ... ({len(token_labels) - 10} more tokens)")
+
+    return results_array
+
+
+def run_counting_analysis(model_name="openai-community/gpt2", force_cpu=False):
     """
     Complete pipeline for analyzing counting mechanisms
     """
     print("--- Starting run_counting_analysis ---")
     print(f"Using model: {model_name}")
-    print("Loading model...")
-    
-    llm = LanguageModel(model_name, device_map="auto")
-    print(f"Model loaded successfully: {llm}")
-    
-    print("\nRunning activation patching analysis...")
-    results, token_labels = analyze_counting_layers(llm, llm.tokenizer, num_examples=2)
-    
-    print("\nGenerating visualizations...")
-    fig = plot_counting_analysis(results, token_labels)
-    if fig:
-        fig.show()
-    
-    print("\nIdentifying important circuit components...")
-    circuits = identify_counting_circuits(results, token_labels)
-    
-    print("--- Finished run_counting_analysis ---")
-    return results, token_labels, circuits
+
+    # Check available memory
+    device = "cpu" if force_cpu else "auto"
+
+    if not force_cpu and torch.cuda.is_available():
+        try:
+            gpu_memory = torch.cuda.get_device_properties(0).total_memory / 1e9
+            free_memory = (
+                torch.cuda.get_device_properties(0).total_memory
+                - torch.cuda.memory_allocated(0)
+            ) / 1e9
+            print(f"GPU total memory: {gpu_memory:.2f} GB")
+            print(f"GPU free memory: {free_memory:.2f} GB")
+
+            if free_memory < 2:  # If less than 2GB free, use CPU
+                device = "cpu"
+                print("Low GPU memory detected, switching to CPU")
+        except:
+            print("Could not check GPU memory, using auto device placement")
+
+    print(f"Loading model with device: {device}...")
+
+    # Load model with appropriate device
+    try:
+        if device == "cpu":
+            model = LanguageModel(model_name, device_map="cpu")
+        else:
+            model = LanguageModel(model_name, device_map="auto")
+        print(f"Model loaded successfully")
+    except Exception as e:
+        print(f"Failed to load model on {device}, trying CPU: {e}")
+        model = LanguageModel(model_name, device_map="cpu")
+        print("Model loaded on CPU")
+
+    clear_memory()
+
+    # Test multiple examples
+    all_results = []
+    for example_idx in range(3):  # Test first 3 examples
+        print(f"\n{'='*60}")
+        print(f"Testing example {example_idx}")
+        print(f"{'='*60}")
+
+        try:
+            ioi_patching_results, token_labels, clean_diff, corrupted_diff = (
+                counting_activation_patching_fixed(model, example_idx=example_idx)
+            )
+
+            # Always plot and analyze - logit differences for counting might be small
+            print(f"Clean logit difference: {clean_diff:.4f}")
+            print(f"Corrupted logit difference: {corrupted_diff:.4f}")
+            print(f"Difference magnitude: {abs(clean_diff - corrupted_diff):.4f}")
+
+            fig = plot_ioi_patching_results(
+                model,
+                ioi_patching_results,
+                token_labels,
+                plot_title=f"Patching GPT-2 Residual Stream on Counting Task (Example {example_idx})",
+            )
+
+            # Show plot
+            try:
+                pio.renderers.default = "browser"
+                fig.show()
+            except:
+                print(
+                    "Could not display plot in browser, saved to counting_results.png"
+                )
+
+            # Analyze importance
+            analyze_layer_importance_fixed(ioi_patching_results, token_labels)
+
+            all_results.append((ioi_patching_results, token_labels))
+
+        except torch.cuda.OutOfMemoryError as e:
+            print(
+                f"CUDA OOM on example {example_idx}, clearing memory and retrying on CPU"
+            )
+            clear_memory()
+
+            # Force CPU for remaining examples
+            if not force_cpu:
+                print("Restarting analysis on CPU...")
+                return run_counting_analysis(model_name=model_name, force_cpu=True)
+            else:
+                print(f"Still getting OOM on CPU, skipping example {example_idx}")
+                continue
+
+        except Exception as e:
+            print(f"Error processing example {example_idx}: {e}")
+            import traceback
+
+            traceback.print_exc()
+            clear_memory()
+            continue
+
+    return all_results
+
 
 if __name__ == "__main__":
     print("--- Script execution started ---")
-    results, labels, circuits = run_counting_analysis()
-    print("--- Script execution finished ---")
+    try:
+        results = run_counting_analysis()
+        print("\n--- Script execution finished successfully ---")
+    except Exception as e:
+        print(f"Error during execution: {e}")
+        import traceback
+
+        traceback.print_exc()
+        clear_memory()
+        raise
