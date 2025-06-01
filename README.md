@@ -34,11 +34,11 @@ Answer: (3)
 
 This section presents the benchmarking results for different models on the counting task.
 
-### GPT-3.5-Turbo
+### GPT-4o
 
-The following results were obtained by running the `benchmark.py` script with the `gpt-3.5-turbo` model.
+The following results were obtained by running the `benchmark.py` script with the `gpt-4o` model.
 
-#### Detailed Category Performance (gpt-3.5-turbo)
+#### Detailed Category Performance (gpt-4o)
 
 Category: animal
   Total: 300
@@ -85,7 +85,7 @@ Category: shape
   Avg. Abs. Error Magnitude (for numerical errors): 1.09
   Error Bias (model - true): -1.06
 
-#### Overall Summary (gpt-3.5-turbo)
+#### Overall Summary (gpt-4o)
 
 Total Examples: 1500
   Overall Correct: 960 (64.00%)
@@ -102,13 +102,13 @@ Total Examples: 1500
 #### Visual Summaries (gpt-4o)
 
 **Category Accuracy (Detailed)**
-![GPT-4o Zero-Shot Category Accuracy Detailed](gpt-4o_zero_shot_category_accuracy_detailed.png)
+![GPT-4o Zero-Shot Category Accuracy Detailed](figs/gpt-4o_zero_shot_category_accuracy_detailed.png)
 
 **Error Magnitudes**
-![GPT-4o Zero-Shot Error Magnitudes](gpt-4o_zero_shot_error_magnitudes.png)
+![GPT-4o Zero-Shot Error Magnitudes](figs/gpt-4o_zero_shot_error_magnitudes.png)
 
 **Outcome Types by Category**
-![GPT-4o Zero-Shot Outcome Types by Category](gpt-4o_zero_shot_outcome_types_by_category.png)
+![GPT-4o Zero-Shot Outcome Types by Category](figs/gpt-4o_zero_shot_outcome_types_by_category.png)
 
 ---
 
