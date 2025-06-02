@@ -114,4 +114,26 @@ Total Examples: 1500
 
 ## Causal Mediation Analysis
 
-*(This section is pending completion of the analysis.)*
+### Methodology
+
+The causal mediation analysis was conducted using activation patching techniques implemented via the `nnsight` and `ndif` libraries. This approach allows us to investigate whether specific neural network layers develop representations of the running count while processing input lists.
+
+### Implementation Details
+
+The code for this analysis is available in `causal_mediation.py`, which implements:
+- Activation patching across different layers of the model
+- Analysis of causal effects on counting performance
+- Visualization of patching results
+
+### Results & Limitations
+
+Unfortunately, the original plan to use LLaMA 3 for this analysis could not be executed as access approval wasn't received in time. Instead, GPT-2 was used as an alternative model.
+
+Key findings:
+- GPT-2 performed poorly on the category counting task, with accuracy comparable to random chance
+- The activation patching experiments did not yield significant results, suggesting that (if there are no obvious bugs in my experiment):
+  - Either GPT-2 does not develop clear representations of counting in its layers
+  - Or the model's overall poor performance on the task made it difficult to isolate meaningful causal patterns
+
+**Outcome Visualization**
+![GPT-2 Causal Mediation Results](counting_results.png)
